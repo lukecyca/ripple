@@ -1,4 +1,4 @@
-# ripple-go
+# ripple
 
 A Go library for talking to [rippled](https://github.com/ripple/rippled) servers.
 
@@ -10,12 +10,13 @@ A Go library for talking to [rippled](https://github.com/ripple/rippled) servers
 
 ## Usage
 
-    package "main"
+    package main
 
-    import "github.com/lukecyca/ripple-go"
+    import "fmt"
+    import "github.com/lukecyca/ripple"
 
     func main() {
-        var r = Connection{Messages: make(chan *Message)}
+        var r = ripple.Connection{Messages: make(chan *ripple.Message)}
         r.Connect("wss://s_west.ripple.com:443")
         go r.Monitor()
 

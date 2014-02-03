@@ -1,48 +1,48 @@
 package ripple
 
 import (
-    "testing"
-    "encoding/json"
+	"encoding/json"
+	"testing"
 )
 
 func TestAmountUnmarshallXRP(t *testing.T) {
-    var raw = []byte(`"200000000"`)
-    var a Amount
+	var raw = []byte(`"200000000"`)
+	var a Amount
 
-    err := json.Unmarshal(raw, &a)
-    if err != nil {
-        t.Error(err)
-    }
+	err := json.Unmarshal(raw, &a)
+	if err != nil {
+		t.Error(err)
+	}
 
-    if a.Currency != "XRP" || a.Value.FloatString(6) != "200.000000" {
-        t.Errorf("Expected 200 XRP, got %+v", a)
-    }
+	if a.Currency != "XRP" || a.Value.FloatString(6) != "200.000000" {
+		t.Errorf("Expected 200 XRP, got %+v", a)
+	}
 }
 
 func TestAmountUnmarshallIOU(t *testing.T) {
-    var raw = []byte(`{
+	var raw = []byte(`{
         "currency": "BTC",
         "issuer": "r000000000000000000000000000000000",
         "value": "0.0001"
     }`)
-    var a Amount
+	var a Amount
 
-    err := json.Unmarshal(raw, &a)
-    if err != nil {
-        t.Error(err)
-    }
+	err := json.Unmarshal(raw, &a)
+	if err != nil {
+		t.Error(err)
+	}
 
-    if a.Currency != "BTC" || a.Value.FloatString(6) != "0.000100" {
-        t.Errorf("Expected 0.0001 BTC, got %+v", a)
-    }
+	if a.Currency != "BTC" || a.Value.FloatString(6) != "0.000100" {
+		t.Errorf("Expected 0.0001 BTC, got %+v", a)
+	}
 
-    if a.Issuer != "r000000000000000000000000000000000" {
-        t.Errorf("Expected issuer r000000000000000000000000000000000, got %+v", a.Issuer)
-    }
+	if a.Issuer != "r000000000000000000000000000000000" {
+		t.Errorf("Expected issuer r000000000000000000000000000000000, got %+v", a.Issuer)
+	}
 }
 
 func TestTransactionUnmarshall(t *testing.T) {
-    var raw = []byte(`{
+	var raw = []byte(`{
 	"Account": "r00000000000000000000000000000000",
 	"Amount": {
 		"currency": "ICE",
@@ -64,22 +64,22 @@ func TestTransactionUnmarshall(t *testing.T) {
 	"date": 444683680,
 	"hash": "4655982C1FD13073F8B4715B6D1485030F4BB3DA9201EF1DBE4D1834764A09BF"
 }`)
-    var r Transaction
+	var r Transaction
 
-    err := json.Unmarshal(raw, &r)
-    if err != nil {
-        t.Error(err)
-    }
+	err := json.Unmarshal(raw, &r)
+	if err != nil {
+		t.Error(err)
+	}
 
-    if r.Account != "r00000000000000000000000000000000" {
-        t.Errorf("Expected Account r000000000000000000000000000000000, got %+v", r.Account)
-    }
+	if r.Account != "r00000000000000000000000000000000" {
+		t.Errorf("Expected Account r000000000000000000000000000000000, got %+v", r.Account)
+	}
 
-    if r.Destination != "r111111111111111111111111111111111" {
-        t.Errorf("Expected Destination r111111111111111111111111111111111, got %+v", r.Destination)
-    }
+	if r.Destination != "r111111111111111111111111111111111" {
+		t.Errorf("Expected Destination r111111111111111111111111111111111, got %+v", r.Destination)
+	}
 
-    if r.DestinationTag != 0 {
-        t.Errorf("Expected DestinationTag 0, got %+v", r.DestinationTag)
-    }
+	if r.DestinationTag != 0 {
+		t.Errorf("Expected DestinationTag 0, got %+v", r.DestinationTag)
+	}
 }

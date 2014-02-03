@@ -2,17 +2,17 @@ package ripple
 
 import (
 	"code.google.com/p/go.net/websocket"
+	"encoding/json"
 	"fmt"
 	"io"
-	"encoding/json"
 	"math/big"
 	"strconv"
 )
 
 type Amount struct {
 	Currency string
-	Issuer string
-	Value big.Rat
+	Issuer   string
+	Value    big.Rat
 }
 
 func (a *Amount) UnmarshalJSON(b []byte) (err error) {
@@ -27,12 +27,12 @@ func (a *Amount) UnmarshalJSON(b []byte) (err error) {
 			panic(fmt.Sprintf("Could not interpret value: %s", m["value"]))
 		}
 		a.Issuer = m["issuer"]
-        return
-    }
+		return
+	}
 
 	// Try interpret as XRP in drips
 	var s string
-    err = json.Unmarshal(b, &s)
+	err = json.Unmarshal(b, &s)
 	if err == nil {
 		dripValue, success := a.Value.SetString(s)
 		if !success {
@@ -40,35 +40,35 @@ func (a *Amount) UnmarshalJSON(b []byte) (err error) {
 		}
 		a.Value.Quo(dripValue, big.NewRat(1000000, 1))
 		a.Currency = "XRP"
-        return
-    }
+		return
+	}
 
 	panic(fmt.Sprintf("Could not unmarshal amount: %s", b))
 	return
 }
 
 type Transaction struct {
-	Account string
-	Amount Amount
-	Date int
-	Destination string
-	DestinationTag int
-	Fee string
-	Flags int
-	Hash string
-	SendMax *Amount
-	Sequence int
-	SingingPubKey string
+	Account         string
+	Amount          Amount
+	Date            int
+	Destination     string
+	DestinationTag  int
+	Fee             string
+	Flags           int
+	Hash            string
+	SendMax         *Amount
+	Sequence        int
+	SingingPubKey   string
 	TransactionType string
-	TxnSignature string
+	TxnSignature    string
 }
 
 type Message struct {
-	LedgerHash string `json:"ledger_hash"`
-	LedgerIndex int `json:"ledger_index"`
-	Status string
+	LedgerHash  string `json:"ledger_hash"`
+	LedgerIndex int    `json:"ledger_index"`
+	Status      string
 	Transaction *Transaction
-	Type string
+	Type        string
 }
 
 func (m *Message) String() string {
@@ -76,8 +76,7 @@ func (m *Message) String() string {
 		t := m.Transaction
 
 		if t.TransactionType == "Payment" {
-			return (
-				"Payment " + t.Hash +
+			return ("Payment " + t.Hash +
 				" from " + t.Account + " to " +
 				t.Destination + " " +
 				strconv.Itoa(t.DestinationTag) + " " +

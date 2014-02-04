@@ -3,6 +3,7 @@ package ripple
 import (
 	"code.google.com/p/go.net/websocket"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -24,7 +25,7 @@ func (a *Amount) UnmarshalJSON(b []byte) (err error) {
 		a.Currency = m["currency"]
 		_, success := a.Value.SetString(m["value"])
 		if !success {
-			panic(fmt.Sprintf("Could not interpret value: %s", m["value"]))
+			return fmt.Errorf("Could not interpret value: %s", m["value"])
 		}
 		a.Issuer = m["issuer"]
 		return
@@ -36,15 +37,14 @@ func (a *Amount) UnmarshalJSON(b []byte) (err error) {
 	if err == nil {
 		dripValue, success := a.Value.SetString(s)
 		if !success {
-			panic(fmt.Sprintf("Could not interpret value: %s", s))
+			return fmt.Errorf("Could not interpret value: %s", s)
 		}
 		a.Value.Quo(dripValue, big.NewRat(1000000, 1))
 		a.Currency = "XRP"
 		return
 	}
 
-	panic(fmt.Sprintf("Could not unmarshal amount: %s", b))
-	return
+	return fmt.Errorf("Could not unmarshal amount: %s", b)
 }
 
 type Transaction struct {
@@ -96,32 +96,33 @@ type Connection struct {
 	conn *websocket.Conn
 }
 
-func (r *Connection) Connect(uri string) {
-	var err error
+func (r *Connection) Connect(uri string) (err error) {
 
 	// Connect to websocket server
 	r.conn, err = websocket.Dial(uri, "", "http://localhost")
 	if err != nil {
-		panic("Could not connect: " + err.Error())
+		return err
 	}
 
 	// Subscribe to all transactions
 	msg := "{\"command\":\"subscribe\",\"id\":1,\"streams\":[\"transactions\"]}"
 	err = websocket.Message.Send(r.conn, msg)
 	if err != nil {
-		panic("Could not subscribe: " + err.Error())
+		return err
 	}
 
 	// Wait for ack
 	var m Message
 	err = websocket.JSON.Receive(r.conn, &m)
 	if err != nil {
-		panic("Could not receive subscribe ack: " + err.Error())
+		return err
 	}
 
 	if m.Type != "response" || m.Status != "success" {
-		panic("Failed to subscribe")
+		return errors.New("Failed to subscribe")
 	}
+
+	return
 }
 
 func (r *Connection) Monitor() {

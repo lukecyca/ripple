@@ -9,7 +9,6 @@ import (
 	"log"
 	"math/big"
 	"strconv"
-	"time"
 )
 
 type Amount struct {
@@ -85,7 +84,7 @@ type Ledger struct {
 	Hash         string
 	Index        string `json:"ledger_index"`
 	ParentHash   string
-	Transactions []Transaction
+	Transactions []*Transaction
 }
 
 type Result struct {
@@ -107,69 +106,66 @@ type Message struct {
 }
 
 type Connection struct {
-	Transactions chan *Transaction
+	Ledgers chan *Ledger
+
+	// Semaphore for number of outstanding ledger getters
+	pastLedgerGetters chan int
 
 	conn *websocket.Conn
 }
 
-func (r *Connection) Connect(uri string) (err error) {
-
-	// Connect to websocket server
-	r.conn, err = websocket.Dial(uri, "", "http://localhost")
-	if err != nil {
-		return err
+func Connect(uri string) (c *Connection, err error) {
+	c = &Connection{
+		Ledgers: make(chan *Ledger),
 	}
 
-	// Subscribe to all transactions
-	msg := "{\"command\":\"subscribe\",\"id\":1,\"streams\":[\"server\", \"ledger\", \"transactions\"]}"
-	err = websocket.Message.Send(r.conn, msg)
+	// Connect to websocket server
+	c.conn, err = websocket.Dial(uri, "", "http://localhost")
 	if err != nil {
-		return err
+		return
+	}
+
+	// Subscribe to all transactions, ledgers, and server messages
+	msg := "{\"command\":\"subscribe\",\"id\":1,\"streams\":[\"server\", \"ledger\", \"transactions\"]}"
+	err = websocket.Message.Send(c.conn, msg)
+	if err != nil {
+		return
 	}
 
 	// Wait for ack
 	var m Message
-	err = websocket.JSON.Receive(r.conn, &m)
+	err = websocket.JSON.Receive(c.conn, &m)
 	if err != nil {
-		return err
+		return
 	}
 
 	if m.Type != "response" || m.Status != "success" {
-		return errors.New("Failed to subscribe")
+		err = errors.New("Failed to subscribe")
+		return
 	}
 
 	return
 }
 
-func (r *Connection) getPastLedgers(startLedger uint64, endLedger uint64) {
-	// Asks the server for each ledger between start and end, inclusive
+func (c *Connection) GetLedger(idx uint64) {
+	// Requests a single ledger from the server
 
-	if startLedger > endLedger {
-		panic("Invalid ledger range")
+	msg := fmt.Sprintf("{\"command\":\"ledger\",\"id\":2,\"ledger_index\":%d,\"transactions\":1,\"expand\":1}", idx)
+	err := websocket.Message.Send(c.conn, msg)
+	if err != nil {
+		panic("Could not get ledger: " + err.Error())
 	}
-	log.Printf("Getting past ledgers [%d, %d]\n", startLedger, endLedger)
-
-	for i := startLedger; i <= endLedger; i++ {
-		msg := fmt.Sprintf("{\"command\":\"ledger\",\"id\":2,\"ledger_index\":%d,\"transactions\":1,\"expand\":1}", i)
-		err := websocket.Message.Send(r.conn, msg)
-		if err != nil {
-			panic("Could not get ledger: " + err.Error())
-		}
-
-		time.Sleep(time.Second)
-	}
-
-	log.Printf("Completed ledgers [%d, %d]\n", startLedger, endLedger)
 }
 
-func (r *Connection) MonitorTransactionsFrom(startLedger uint64) {
-	currentLedger := startLedger - 1
-	currentLedgerTxnsLeft := 0
+func (c *Connection) Monitor() {
+	var currentLedgerIndex uint64
+	var currentLedgerTxnsLeft int
+	var currentLedger *Ledger
 
 	for {
 		var err error
 		var m Message
-		err = websocket.JSON.Receive(r.conn, &m)
+		err = websocket.JSON.Receive(c.conn, &m)
 		if err != nil {
 			if err == io.EOF {
 				// graceful shutdown by server
@@ -181,45 +177,49 @@ func (r *Connection) MonitorTransactionsFrom(startLedger uint64) {
 
 		switch m.Type {
 		case "ledgerClosed":
-			if m.LedgerIndex > currentLedger+1 {
-				//fmt.Printf("Missing ledgers between %d and %d\n", currentLedger, m.LedgerIndex)
-				//panic("")
-				go r.getPastLedgers(currentLedger+1, m.LedgerIndex-1)
-			}
 			if currentLedgerTxnsLeft != 0 {
-				log.Printf("Missing %d transactions from ledger %d\n", currentLedgerTxnsLeft, currentLedger)
-				panic("")
+				log.Panicf("Missing %d transactions from ledger %d\n", currentLedgerTxnsLeft, currentLedgerIndex)
 			}
-			fmt.Println(m.LedgerIndex)
-			currentLedger = m.LedgerIndex
+
+			currentLedgerIndex = m.LedgerIndex
 			currentLedgerTxnsLeft = m.TxnCount
+			currentLedger = &Ledger{
+				CloseTime: m.LedgerTime,
+				Closed:    true,
+				Hash:      m.LedgerHash,
+				Index:     strconv.FormatUint(m.LedgerIndex, 10),
+			}
 
 		case "transaction":
-			if m.LedgerIndex != currentLedger {
-				log.Printf("Received out-of-order transaction from ledger %d\n", m.LedgerIndex)
-				panic("")
+			if m.LedgerIndex != currentLedgerIndex {
+				log.Panicf("Received out-of-order transaction from ledger %d\n", m.LedgerIndex)
 			}
+			if currentLedgerTxnsLeft <= 0 {
+				log.Printf("Error: Received extra txn: %s", m.Transaction.Hash)
+			}
+
+			currentLedger.Transactions = append(currentLedger.Transactions, m.Transaction)
+
 			currentLedgerTxnsLeft--
-			r.Transactions <- m.Transaction
+			if currentLedgerTxnsLeft == 0 {
+				c.Ledgers <- currentLedger
+			}
 
 		case "serverStatus":
-			log.Printf("SERVER: %s\n", m.ServerStatus)
+			log.Printf("Server Status: %s\n", m.ServerStatus)
 
 		case "response":
 			if m.Id == 2 && m.Status == "success" {
-				fmt.Println(m.Result.Ledger.Index)
-				for _, t := range m.Result.Ledger.Transactions {
-					r.Transactions <- &t
-				}
+				c.Ledgers <- m.Result.Ledger
 			} else {
-				log.Printf("Unknown response ID: %d, status: %s\n", m.Id, m.Status)
+				log.Printf("Error: Unknown response ID: %d, status: %s\n", m.Id, m.Status)
 			}
 
 		case "error":
 			log.Printf("Error: %s\n", m.Error)
 
 		default:
-			log.Printf("Unknown message type: %s\n", m.Type)
+			log.Printf("Error: Unknown message type: %s\n", m.Type)
 		}
 	}
 }

@@ -1,27 +1,33 @@
 # ripple
 
-A Go library for talking to [rippled](https://github.com/ripple/rippled) servers.
+A Go library for tracking transactions on the [ripple](https://ripple.com) network.
 
 ## Features
 
-* Subscribes to transactions
-* Parses them into appropriate data structures
-* That's all (patches welcome)
+This library allows you to subscribe to transactions starting at any arbitrary ledger
+index. Since the ripple API doesn't currently support this functionality, this library
+will request individual ledgers until it has caught up with the ledger stream.
+
+Ledgers are emitted in order, and contain all of their transactions. This makes it
+ideal for robustly tracking transactions. Your application must simply persist the
+latest ledger index as it consumes them. When your application restarts, it can
+request to start exactly where it left off.
 
 ## Usage
 
-    package main
+package main
 
-    import "fmt"
-    import "github.com/lukecyca/ripple"
+import "fmt"
+import "github.com/lukecyca/ripple"
 
-    func main() {
-        var r = ripple.Connection{Messages: make(chan *ripple.Message)}
-        r.Connect("wss://s_west.ripple.com:443")
-        go r.Monitor()
+func main() {
+    var r = ripple.NewMonitor(5008254)
 
-        for {
-            m := <- r.Messages
-            fmt.Println(m.String())
+    for {
+        ledger := <-r.Ledgers
+        fmt.Printf("Ledger %s with %d transactions:\n", ledger.Index, len(ledger.Transactions))
+        for _, txn := range ledger.Transactions {
+            fmt.Printf("  %s %s\n", txn.Hash, txn.TransactionType)
         }
     }
+}

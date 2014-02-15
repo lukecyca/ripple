@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"launchpad.net/tomb"
 	"log"
 	"math/big"
 	"strconv"
@@ -64,19 +64,6 @@ type Transaction struct {
 	TxnSignature    string
 }
 
-func (t *Transaction) String() string {
-	if t.TransactionType == "Payment" {
-		return ("Payment " + t.Hash +
-			" from " + t.Account + " to " +
-			t.Destination + " " +
-			strconv.Itoa(t.DestinationTag) + " " +
-			t.Amount.Value.FloatString(5) + " " +
-			t.Amount.Currency)
-	}
-
-	return t.TransactionType + " " + t.Hash
-}
-
 type Ledger struct {
 	Accepted     bool
 	CloseTime    uint64 `json:"close_time"`
@@ -107,11 +94,8 @@ type Message struct {
 
 type Connection struct {
 	Ledgers chan *Ledger
-
-	// Semaphore for number of outstanding ledger getters
-	pastLedgerGetters chan int
-
-	conn *websocket.Conn
+	conn    *websocket.Conn
+	t       tomb.Tomb
 }
 
 func Connect(uri string) (c *Connection, err error) {
@@ -147,14 +131,12 @@ func Connect(uri string) (c *Connection, err error) {
 	return
 }
 
-func (c *Connection) GetLedger(idx uint64) {
+func (c *Connection) GetLedger(idx uint64) (err error) {
 	// Requests a single ledger from the server
 
 	msg := fmt.Sprintf("{\"command\":\"ledger\",\"id\":2,\"ledger_index\":%d,\"transactions\":1,\"expand\":1}", idx)
-	err := websocket.Message.Send(c.conn, msg)
-	if err != nil {
-		panic("Could not get ledger: " + err.Error())
-	}
+	err = websocket.Message.Send(c.conn, msg)
+	return
 }
 
 func (c *Connection) Monitor() {
@@ -162,25 +144,19 @@ func (c *Connection) Monitor() {
 	var currentLedgerTxnsLeft int
 	var currentLedger *Ledger
 
+	defer c.t.Done()
+	defer close(c.Ledgers)
+
 	for {
 		var err error
 		var m Message
 		err = websocket.JSON.Receive(c.conn, &m)
 		if err != nil {
-			if err == io.EOF {
-				// graceful shutdown by server
-				break
-			}
-			fmt.Println("Could not receive: " + err.Error())
-			break
+			c.t.Kill(err)
 		}
 
 		switch m.Type {
 		case "ledgerClosed":
-			if currentLedgerTxnsLeft != 0 {
-				log.Panicf("Missing %d transactions from ledger %d\n", currentLedgerTxnsLeft, currentLedgerIndex)
-			}
-
 			currentLedgerIndex = m.LedgerIndex
 			currentLedgerTxnsLeft = m.TxnCount
 			currentLedger = &Ledger{
@@ -191,35 +167,39 @@ func (c *Connection) Monitor() {
 			}
 
 		case "transaction":
-			if m.LedgerIndex != currentLedgerIndex {
-				log.Panicf("Received out-of-order transaction from ledger %d\n", m.LedgerIndex)
-			}
-			if currentLedgerTxnsLeft <= 0 {
-				log.Printf("Error: Received extra txn: %s", m.Transaction.Hash)
-			}
+			if m.LedgerIndex == currentLedgerIndex {
+				currentLedger.Transactions = append(currentLedger.Transactions, m.Transaction)
 
-			currentLedger.Transactions = append(currentLedger.Transactions, m.Transaction)
-
-			currentLedgerTxnsLeft--
-			if currentLedgerTxnsLeft == 0 {
-				c.Ledgers <- currentLedger
+				currentLedgerTxnsLeft--
+				if currentLedgerTxnsLeft == 0 {
+					c.Ledgers <- currentLedger
+				}
 			}
 
 		case "serverStatus":
-			log.Printf("Server Status: %s\n", m.ServerStatus)
+			log.Printf("Rippled Server Status: %s\n", m.ServerStatus)
 
 		case "response":
 			if m.Id == 2 && m.Status == "success" {
 				c.Ledgers <- m.Result.Ledger
 			} else {
-				log.Printf("Error: Unknown response ID: %d, status: %s\n", m.Id, m.Status)
+				c.t.Kill(fmt.Errorf("Error: Unknown response ID: %d, status: %s\n", m.Id, m.Status))
 			}
 
 		case "error":
-			log.Printf("Error: %s\n", m.Error)
+			c.t.Kill(fmt.Errorf("Error: %s\n", m.Error))
 
 		default:
-			log.Printf("Error: Unknown message type: %s\n", m.Type)
+			c.t.Kill(fmt.Errorf("Unknown message type: %s\n", m.Type))
+
+		}
+
+		// If the tomb is marked dying, exit cleanly
+		select {
+		case <-c.t.Dying():
+			return
+		default:
+			//pass
 		}
 	}
 }

@@ -15,19 +15,19 @@ request to start exactly where it left off.
 
 ## Usage
 
-package main
+    package main
 
-import "fmt"
-import "github.com/lukecyca/ripple"
+    import "fmt"
+    import "github.com/lukecyca/ripple"
 
-func main() {
-    var r = ripple.NewMonitor(5008254)
+    func main() {
+        var r = ripple.NewMonitor(5008254)
 
-    for {
-        ledger := <-r.Ledgers
-        fmt.Printf("Ledger %s with %d transactions:\n", ledger.Index, len(ledger.Transactions))
-        for _, txn := range ledger.Transactions {
-            fmt.Printf("  %s %s\n", txn.Hash, txn.TransactionType)
+        for {
+            ledger := <-r.Ledgers
+            fmt.Printf("Ledger %s with %d transactions:\n", ledger.Index, len(ledger.Transactions))
+            for _, txn := range ledger.Transactions {
+                fmt.Printf("  %s %s\n", txn.Hash, txn.TransactionType)
+            }
         }
     }
-}

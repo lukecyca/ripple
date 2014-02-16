@@ -34,29 +34,48 @@ func NewMonitor(startLedgerIdx uint64) *Monitor {
 		nextLedgerIdx:    startLedgerIdx,
 		outOfOrderBuffer: make(map[uint64]*Ledger),
 	}
-	go m.Run()
+	go m.loop()
 	return m
 }
 
-func (m *Monitor) runOnServer(uri string) (err error) {
+func (m *Monitor) loop() {
+	uriIndex := 0
+	defer m.t.Done()
+
+	for {
+		log.Printf("Connecting: %s", URIs[uriIndex])
+		err := m.handleConnection(URIs[uriIndex])
+		log.Printf("Connection failed: %s", err)
+
+		uriIndex = (uriIndex + 1) % len(URIs)
+
+		select {
+		case <-m.t.Dying():
+			// If the tomb is marked dying, exit cleanly
+			return
+		default:
+			// Wait a bit before reconnecting to another server
+			time.Sleep(5 * time.Second)
+		}
+	}
+}
+
+func (m *Monitor) handleConnection(uri string) (err error) {
 	var c *Connection
 	var ledgerIdx uint64
 
 	// Open a new connection to ripple
-	c, err = Connect(uri)
+	c, err = NewConnection(uri)
 	if err != nil {
 		return err
 	}
-	go c.Monitor()
 	defer func() {
 		c.t.Kill(nil)
 		c.t.Wait()
-		c.conn.Close()
 	}()
 
 	reqNextLedgerTimer := time.AfterFunc(0, func() {
 		c.GetLedger(m.nextLedgerIdx)
-		log.Printf("Asked for ledger %d", m.nextLedgerIdx)
 	})
 	defer reqNextLedgerTimer.Stop()
 
@@ -68,10 +87,21 @@ func (m *Monitor) runOnServer(uri string) (err error) {
 			return errors.New("Timed out")
 
 		case <-m.t.Dying():
+			// We are exiting cleanly
 			return nil
 
-		case ledger := <-c.Ledgers:
+		case ledger, ok := <-c.Ledgers:
+			if !ok {
+				// Ripple connection is dead
+				c.t.Kill(nil)
+				return c.t.Wait()
+			}
+
 			ledgerIdx, err = strconv.ParseUint(ledger.Index, 10, 64)
+			if err != nil {
+				log.Printf("Error parsing ledger index: %s", err)
+				continue
+			}
 
 			switch {
 			case ledgerIdx == m.nextLedgerIdx:
@@ -100,32 +130,10 @@ func (m *Monitor) runOnServer(uri string) (err error) {
 
 				// This is a later ledger. Stash it for now.
 				m.outOfOrderBuffer[ledgerIdx] = ledger
-				log.Printf("Stashed ledger %d", ledgerIdx)
 
 			default:
 				log.Printf("Received old ledger: %d", ledgerIdx)
 			}
-		}
-	}
-}
-
-func (m *Monitor) Run() {
-	uriIndex := 0
-	defer m.t.Done()
-
-	for {
-		log.Printf("Connecting: %s", URIs[uriIndex])
-		err := m.runOnServer(URIs[uriIndex])
-		log.Printf("Connection failed: %s", err)
-
-		uriIndex = (uriIndex + 1) % len(URIs)
-
-		// If the tomb is marked dying, exit cleanly
-		select {
-		case <-m.t.Dying():
-			return
-		default:
-			//pass
 		}
 	}
 }

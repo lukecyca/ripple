@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/big"
 	"strconv"
+	"time"
 )
 
 type Amount struct {
@@ -98,7 +99,7 @@ type Connection struct {
 	t       tomb.Tomb
 }
 
-func Connect(uri string) (c *Connection, err error) {
+func NewConnection(uri string) (c *Connection, err error) {
 	c = &Connection{
 		Ledgers: make(chan *Ledger),
 	}
@@ -108,6 +109,8 @@ func Connect(uri string) (c *Connection, err error) {
 	if err != nil {
 		return
 	}
+
+	c.conn.SetDeadline(time.Now().Add(Timeout))
 
 	// Subscribe to all transactions, ledgers, and server messages
 	msg := "{\"command\":\"subscribe\",\"id\":1,\"streams\":[\"server\", \"ledger\", \"transactions\"]}"
@@ -128,28 +131,32 @@ func Connect(uri string) (c *Connection, err error) {
 		return
 	}
 
+	go c.loop()
 	return
 }
 
 func (c *Connection) GetLedger(idx uint64) (err error) {
 	// Requests a single ledger from the server
 
+	c.conn.SetDeadline(time.Now().Add(Timeout))
 	msg := fmt.Sprintf("{\"command\":\"ledger\",\"id\":2,\"ledger_index\":%d,\"transactions\":1,\"expand\":1}", idx)
 	err = websocket.Message.Send(c.conn, msg)
 	return
 }
 
-func (c *Connection) Monitor() {
+func (c *Connection) loop() {
 	var currentLedgerIndex uint64
 	var currentLedgerTxnsLeft int
 	var currentLedger *Ledger
 
 	defer c.t.Done()
 	defer close(c.Ledgers)
+	defer c.conn.Close()
 
 	for {
 		var err error
 		var m Message
+		c.conn.SetDeadline(time.Now().Add(Timeout))
 		err = websocket.JSON.Receive(c.conn, &m)
 		if err != nil {
 			c.t.Kill(err)

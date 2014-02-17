@@ -3,7 +3,6 @@ package ripple
 import (
 	"code.google.com/p/go.net/websocket"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"launchpad.net/tomb"
 	"log"
@@ -75,8 +74,15 @@ type Ledger struct {
 	Transactions []*Transaction
 }
 
+type Info struct {
+	BuildVersion string `json:"build_version"`
+	HostID       string
+	Peers        int
+}
+
 type Result struct {
 	Ledger *Ledger
+	Info   *Info
 }
 
 type Message struct {
@@ -127,9 +133,21 @@ func NewConnection(uri string) (c *Connection, err error) {
 	}
 
 	if m.Type != "response" || m.Status != "success" {
-		err = errors.New("Failed to subscribe")
+		err = fmt.Errorf("Failed to subscribe: %s", m.Error)
 		return
 	}
+
+	// Get server info
+	msg = "{\"command\":\"server_info\",\"id\":3}"
+	err = websocket.Message.Send(c.conn, msg)
+	if err != nil {
+		return
+	}
+	err = websocket.JSON.Receive(c.conn, &m)
+	if err != nil {
+		return
+	}
+	log.Printf("Connected to hostid %s (%s)", m.Result.Info.HostID, m.Result.Info.BuildVersion)
 
 	go c.loop()
 	return
@@ -190,7 +208,7 @@ func (c *Connection) loop() {
 			if m.Id == 2 && m.Status == "success" {
 				c.Ledgers <- m.Result.Ledger
 			} else {
-				c.t.Kill(fmt.Errorf("Error: Unknown response ID: %d, status: %s\n", m.Id, m.Status))
+				c.t.Kill(fmt.Errorf("Error: Unknown response ID: %d, status: %s, error: %s\n", m.Id, m.Status, m.Error))
 			}
 
 		case "error":

@@ -2,6 +2,8 @@
 
 A Go library for tracking transactions on the [ripple](https://ripple.com) network.
 
+[![Build Status](https://drone.io/github.com/lukecyca/ripple/status.png)](https://drone.io/github.com/lukecyca/ripple/latest)
+
 ## Features
 
 This library allows you to subscribe to transactions starting at any arbitrary ledger

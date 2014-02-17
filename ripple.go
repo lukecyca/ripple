@@ -100,9 +100,12 @@ type Message struct {
 }
 
 type Connection struct {
-	Ledgers chan *Ledger
-	conn    *websocket.Conn
-	t       tomb.Tomb
+	Ledgers               chan *Ledger
+	conn                  *websocket.Conn
+	t                     tomb.Tomb
+	currentLedgerIndex    uint64
+	currentLedgerTxnsLeft int
+	currentLedger         *Ledger
 }
 
 func NewConnection(uri string) (c *Connection, err error) {
@@ -143,11 +146,6 @@ func NewConnection(uri string) (c *Connection, err error) {
 	if err != nil {
 		return
 	}
-	err = websocket.JSON.Receive(c.conn, &m)
-	if err != nil {
-		return
-	}
-	log.Printf("Connected to hostid %s (%s)", m.Result.Info.HostID, m.Result.Info.BuildVersion)
 
 	go c.loop()
 	return
@@ -163,10 +161,6 @@ func (c *Connection) GetLedger(idx uint64) (err error) {
 }
 
 func (c *Connection) loop() {
-	var currentLedgerIndex uint64
-	var currentLedgerTxnsLeft int
-	var currentLedger *Ledger
-
 	defer c.t.Done()
 	defer close(c.Ledgers)
 	defer c.conn.Close()
@@ -179,45 +173,7 @@ func (c *Connection) loop() {
 		if err != nil {
 			c.t.Kill(err)
 		}
-
-		switch m.Type {
-		case "ledgerClosed":
-			currentLedgerIndex = m.LedgerIndex
-			currentLedgerTxnsLeft = m.TxnCount
-			currentLedger = &Ledger{
-				CloseTime: m.LedgerTime,
-				Closed:    true,
-				Hash:      m.LedgerHash,
-				Index:     strconv.FormatUint(m.LedgerIndex, 10),
-			}
-
-		case "transaction":
-			if m.LedgerIndex == currentLedgerIndex {
-				currentLedger.Transactions = append(currentLedger.Transactions, m.Transaction)
-
-				currentLedgerTxnsLeft--
-				if currentLedgerTxnsLeft == 0 {
-					c.Ledgers <- currentLedger
-				}
-			}
-
-		case "serverStatus":
-			log.Printf("Rippled Server Status: %s\n", m.ServerStatus)
-
-		case "response":
-			if m.Id == 2 && m.Status == "success" {
-				c.Ledgers <- m.Result.Ledger
-			} else {
-				c.t.Kill(fmt.Errorf("Error: Unknown response ID: %d, status: %s, error: %s\n", m.Id, m.Status, m.Error))
-			}
-
-		case "error":
-			c.t.Kill(fmt.Errorf("Error: %s\n", m.Error))
-
-		default:
-			c.t.Kill(fmt.Errorf("Unknown message type: %s\n", m.Type))
-
-		}
+		c.handleMessage(&m)
 
 		// If the tomb is marked dying, exit cleanly
 		select {
@@ -226,5 +182,52 @@ func (c *Connection) loop() {
 		default:
 			//pass
 		}
+	}
+}
+
+func (c *Connection) handleMessage(m *Message) {
+	switch {
+	case m.Type == "ledgerClosed":
+		c.currentLedgerIndex = m.LedgerIndex
+		c.currentLedgerTxnsLeft = m.TxnCount
+		c.currentLedger = &Ledger{
+			CloseTime: m.LedgerTime,
+			Closed:    true,
+			Hash:      m.LedgerHash,
+			Index:     strconv.FormatUint(m.LedgerIndex, 10),
+		}
+
+	case m.Type == "transaction":
+		if m.LedgerIndex == c.currentLedgerIndex {
+			c.currentLedger.Transactions = append(c.currentLedger.Transactions, m.Transaction)
+
+			c.currentLedgerTxnsLeft--
+			if c.currentLedgerTxnsLeft == 0 {
+				c.Ledgers <- c.currentLedger
+			}
+		}
+
+	case m.Type == "serverStatus":
+		log.Printf("Rippled Server Status: %s", m.ServerStatus)
+
+	case m.Type == "response" && m.Id == 2 && m.Status == "success":
+		c.Ledgers <- m.Result.Ledger
+
+	case m.Type == "response" && m.Id == 3 && m.Status == "success":
+		log.Printf(
+			"Connected to hostid %s (%s)",
+			m.Result.Info.HostID,
+			m.Result.Info.BuildVersion,
+		)
+
+	default:
+		c.t.Kill(fmt.Errorf(
+			"Unknown response: type=%s id=%d, status=%s, error=%s",
+			m.Type,
+			m.Id,
+			m.Status,
+			m.Error,
+		))
+
 	}
 }

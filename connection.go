@@ -108,7 +108,7 @@ func (c *Connection) handleMessage(m *Message) {
 		}
 
 	case m.Type == "transaction":
-		if m.LedgerIndex == c.currentLedgerIndex {
+		if m.LedgerIndex == c.currentLedgerIndex && m.Validated == true {
 			c.currentLedger.Transactions = append(c.currentLedger.Transactions, m.Transaction)
 
 			c.currentLedgerTxnsLeft--

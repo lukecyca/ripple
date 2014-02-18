@@ -4,7 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strconv"
+	"time"
 )
+
+type Time struct {
+	T time.Time
+}
+
+func (t *Time) UnmarshalJSON(b []byte) (err error) {
+
+	s, err := strconv.ParseUint(string(b), 10, 64)
+	if err != nil {
+		return
+	}
+
+	t.T = time.Unix(int64(s)+946684800, 0)
+
+	return
+}
 
 type Amount struct {
 	Currency string
@@ -46,14 +64,14 @@ func (a *Amount) UnmarshalJSON(b []byte) (err error) {
 type Transaction struct {
 	Account         string
 	Amount          Amount
-	Date            int
+	Date            Time
 	Destination     string
-	DestinationTag  int
+	DestinationTag  uint32
 	Fee             string
-	Flags           int
+	Flags           uint32
 	Hash            string
 	SendMax         *Amount
-	Sequence        int
+	Sequence        uint32
 	SingingPubKey   string
 	TransactionType string
 	TxnSignature    string
@@ -61,7 +79,7 @@ type Transaction struct {
 
 type Ledger struct {
 	Accepted     bool
-	CloseTime    uint64 `json:"close_time"`
+	CloseTime    Time `json:"close_time"`
 	Closed       bool
 	Hash         string
 	Index        string `json:"ledger_index"`
@@ -88,8 +106,9 @@ type Message struct {
 	Error        string
 	LedgerHash   string `json:"ledger_hash"`
 	LedgerIndex  uint64 `json:"ledger_index"`
-	LedgerTime   uint64 `json:"ledger_time"`
+	LedgerTime   Time   `json:"ledger_time"`
 	Transaction  *Transaction
 	TxnCount     int    `json:"txn_count"`
 	ServerStatus string `json:"server_status"`
+	Validated    bool
 }

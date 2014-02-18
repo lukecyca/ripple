@@ -2,6 +2,7 @@ package ripple
 
 import (
 	"testing"
+	"time"
 )
 
 func TestHandleStreamMessages(t *testing.T) {
@@ -12,7 +13,7 @@ func TestHandleStreamMessages(t *testing.T) {
 		Type:        "ledgerClosed",
 		LedgerIndex: 1234567,
 		TxnCount:    2,
-		LedgerTime:  12345678,
+		LedgerTime:  Time{T: time.Now()},
 		LedgerHash:  "DEADBEEF",
 	}
 	c.handleMessage(&m)
@@ -32,6 +33,7 @@ func TestHandleStreamMessages(t *testing.T) {
 		Type:        "transaction",
 		LedgerIndex: 1234567,
 		Transaction: &Transaction{},
+		Validated:   true,
 	}
 	c.handleMessage(&m)
 

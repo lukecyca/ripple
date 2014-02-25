@@ -117,7 +117,7 @@ func (m *Monitor) handleConnection(uri string) (err error) {
 
 				// If we still have a gap, request the next ledger
 				if len(m.outOfOrderBuffer) > 0 {
-					reqNextLedgerTimer.Reset(500 * time.Millisecond)
+					reqNextLedgerTimer.Reset(100 * time.Millisecond)
 				}
 
 				watchdogTimer.Reset(Timeout)

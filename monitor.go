@@ -16,9 +16,13 @@ var URIs []string = []string{
 	"wss://s1.ripple.com:443",
 }
 
+type LedgerEmitter interface {
+	Ledgers() chan *Ledger
+}
+
 type Monitor struct {
 	t       tomb.Tomb
-	Ledgers chan *Ledger
+	ledgers chan *Ledger
 
 	// Next ledger to anticipate
 	nextLedgerIdx uint64
@@ -30,7 +34,7 @@ type Monitor struct {
 
 func NewMonitor(startLedgerIdx uint64) *Monitor {
 	m := &Monitor{
-		Ledgers:          make(chan *Ledger),
+		ledgers:          make(chan *Ledger),
 		nextLedgerIdx:    startLedgerIdx,
 		outOfOrderBuffer: make(map[uint64]*Ledger),
 	}
@@ -58,6 +62,10 @@ func (m *Monitor) loop() {
 			time.Sleep(5 * time.Second)
 		}
 	}
+}
+
+func (m Monitor) Ledgers() chan *Ledger {
+	return m.ledgers
 }
 
 func (m *Monitor) handleConnection(uri string) (err error) {
@@ -106,12 +114,12 @@ func (m *Monitor) handleConnection(uri string) (err error) {
 			switch {
 			case ledgerIdx == m.nextLedgerIdx:
 				// Ledger is the one we need next. Emit it.
-				m.Ledgers <- ledger
+				m.ledgers <- ledger
 				m.nextLedgerIdx++
 
 				// If we already have any of the next ledgers, emit them now too.
 				for ; m.outOfOrderBuffer[m.nextLedgerIdx] != nil; m.nextLedgerIdx++ {
-					m.Ledgers <- m.outOfOrderBuffer[m.nextLedgerIdx]
+					m.ledgers <- m.outOfOrderBuffer[m.nextLedgerIdx]
 					delete(m.outOfOrderBuffer, m.nextLedgerIdx)
 				}
 

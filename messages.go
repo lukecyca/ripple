@@ -9,7 +9,7 @@ import (
 )
 
 type Time struct {
-	T time.Time
+	time.Time
 }
 
 func (t *Time) UnmarshalJSON(b []byte) (err error) {
@@ -19,7 +19,7 @@ func (t *Time) UnmarshalJSON(b []byte) (err error) {
 		return
 	}
 
-	t.T = time.Unix(int64(s)+946684800, 0)
+	t.Time = time.Unix(int64(s)+946684800, 0)
 
 	return
 }

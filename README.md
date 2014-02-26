@@ -28,7 +28,7 @@ request to start exactly where it left off.
         var r = ripple.NewMonitor(5008254)
 
         for {
-            ledger := <-r.Ledgers
+            ledger := <-r.Ledgers()
             fmt.Printf("Ledger %s with %d transactions:\n", ledger.Index, len(ledger.Transactions))
             for _, txn := range ledger.Transactions {
                 fmt.Printf("  %s %s\n", txn.Hash, txn.TransactionType)

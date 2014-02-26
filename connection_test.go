@@ -13,7 +13,7 @@ func TestHandleStreamMessages(t *testing.T) {
 		Type:        "ledgerClosed",
 		LedgerIndex: 1234567,
 		TxnCount:    2,
-		LedgerTime:  Time{T: time.Now()},
+		LedgerTime:  Time{Time: time.Now()},
 		LedgerHash:  "DEADBEEF",
 	}
 	c.handleMessage(&m)

@@ -83,7 +83,7 @@ func TestTransactionUnmarshall(t *testing.T) {
 		t.Errorf("Expected DestinationTag 0, got %d", r.DestinationTag)
 	}
 
-	if r.Date.T.Unix() != 1391368480 {
-		t.Errorf("Expected Date 1391368480, got %d", r.Date.T.Unix())
+	if r.Date.Unix() != 1391368480 {
+		t.Errorf("Expected Date 1391368480, got %d", r.Date.Unix())
 	}
 }

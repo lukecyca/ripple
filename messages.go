@@ -61,6 +61,10 @@ func (a *Amount) UnmarshalJSON(b []byte) (err error) {
 	return fmt.Errorf("Could not unmarshal amount: %s", b)
 }
 
+type Meta struct {
+	TransactionResult string
+}
+
 type Transaction struct {
 	Account         string
 	Amount          Amount
@@ -75,6 +79,8 @@ type Transaction struct {
 	SingingPubKey   string
 	TransactionType string
 	TxnSignature    string
+
+	Meta *Meta `json:"metaData"`
 }
 
 type Ledger struct {
@@ -111,4 +117,5 @@ type Message struct {
 	TxnCount     int    `json:"txn_count"`
 	ServerStatus string `json:"server_status"`
 	Validated    bool
+	Meta         *Meta `json:"meta"`
 }
